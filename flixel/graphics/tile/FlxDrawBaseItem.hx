@@ -1,119 +1,121 @@
 package flixel.graphics.tile;
 
-import flixel.FlxCamera;
+import openfl.display.BlendMode;
+import openfl.display.ShaderParameter;
+import openfl.display3D.Context3DCompareMode;
+import openfl.display3D.Context3DWrapMode;
+import openfl.geom.ColorTransform;
+
 import flixel.graphics.frames.FlxFrame;
 import flixel.math.FlxMatrix;
-import openfl.display.BlendMode;
-import openfl.geom.ColorTransform;
-#if !FLX_DRAW_QUADS
-import openfl.display.Tilesheet;
-#end
+import flixel.system.FlxAssets.FlxShader;
+import flixel.FlxCamera;
 
-/**
- * @author Zaphod
- */
-class FlxDrawBaseItem<T>
-{
-	/**
-	 * Tracks the total number of draw calls made each frame.
-	 */
+import funkin.backend.CPPTypes;
+
+class FlxDrawBaseItem<T> {
+	public static var colorIdentity:ColorTransform = new ColorTransform();
 	public static var drawCalls:Int = 0;
 
-	public static function blendToInt(blend:BlendMode):Int
-	{
-		#if FLX_DRAW_QUADS
-		return 0; // no blend mode support in drawQuads()
-		#else
-		if (blend == null)
-			return Tilesheet.TILE_BLEND_NORMAL;
-
-		return switch (blend)
-		{
-			case BlendMode.ADD:
-				Tilesheet.TILE_BLEND_ADD;
-			#if !flash
-			case BlendMode.MULTIPLY:
-				Tilesheet.TILE_BLEND_MULTIPLY;
-			case BlendMode.SCREEN:
-				Tilesheet.TILE_BLEND_SCREEN;
-			case BlendMode.SUBTRACT:
-				Tilesheet.TILE_BLEND_SUBTRACT;
-			#if !lime_legacy
-			case BlendMode.DARKEN:
-				Tilesheet.TILE_BLEND_DARKEN;
-			case BlendMode.LIGHTEN:
-				Tilesheet.TILE_BLEND_LIGHTEN;
-			case BlendMode.OVERLAY:
-				Tilesheet.TILE_BLEND_OVERLAY;
-			case BlendMode.HARDLIGHT:
-				Tilesheet.TILE_BLEND_HARDLIGHT;
-			case BlendMode.DIFFERENCE:
-				Tilesheet.TILE_BLEND_DIFFERENCE;
-			case BlendMode.INVERT:
-				Tilesheet.TILE_BLEND_INVERT;
-			#end
-			#end
-			default:
-				Tilesheet.TILE_BLEND_NORMAL;
-		}
-		#end
-	}
-
 	public var nextTyped:T;
-
 	public var next:FlxDrawBaseItem<T>;
+	public var type:FlxDrawItemType;
 
+	public var numVertices(get, never):Int;
+	public var numTriangles(get, never):Int;
+
+	public var shader:Null<FlxShader>;
 	public var graphics:FlxGraphic;
 	public var antialiasing:Bool = false;
 	public var colored:Bool = false;
 	public var hasColorOffsets:Bool = false;
-	public var blending:Int = 0;
-	public var blend:BlendMode;
+	public var blend:BlendMode = NORMAL;
+	public var wrapMode:Context3DWrapMode = CLAMP;
+	public var depthCompareMode:Context3DCompareMode = ALWAYS;
 
-	public var type:FlxDrawItemType;
+	// colorMultipliers is alphas, it's there to not confuse with variable naming
+	// if colored, it'll use shader.colorMultiplier uniform, if not, shader.alpha uniform
+	var alphas:Array<Float>;
+	var colorMultipliers:Array<Float>;
+	var colorOffsets:Array<Float>;
 
-	public var numVertices(get, never):Int;
-
-	public var numTriangles(get, never):Int;
-
-	public function new() {}
-
-	public function reset():Void
-	{
-		graphics = null;
-		antialiasing = false;
-		nextTyped = null;
-		next = null;
+	public function new() {
+		colorMultipliers = alphas = [];
 	}
 
-	public function dispose():Void
-	{
+	inline function baseReset() {
+		nextTyped = null;
+		next = null;
+
+		//alphas.resize(0);
+		colorMultipliers.resize(0);
+		if (colorOffsets != null) colorOffsets.resize(0);
+		else if (hasColorOffsets) colorOffsets = [];
+	}
+	public function reset() baseReset();
+
+	inline function baseDispose() {
 		graphics = null;
 		next = null;
 		type = null;
 		nextTyped = null;
+
+		alphas = null;
+		colorMultipliers = null;
+		colorOffsets = null;
+	}
+	public function dispose() baseDispose();
+
+	public function render(camera:FlxCamera) {}
+
+	public function addQuad(frame:FlxFrame, matrix:FlxMatrix, ?transform:ColorTransform) {}
+
+	function get_numVertices():Int return 0;
+	function get_numTriangles():Int return 0;
+
+	inline function setParameterValue(parameter:ShaderParameter<Bool>, value:Bool) {
+		if (parameter.value == null) parameter.value = [value];
+		else parameter.value[0] = value;
 	}
 
-	public function render(camera:FlxCamera):Void
-	{
-		drawCalls++;
+	inline function addColorTransform(transform:ColorTransform) {
+		if (colored) {
+			colorMultipliers.push(transform.redMultiplier);
+			colorMultipliers.push(transform.greenMultiplier);
+			colorMultipliers.push(transform.blueMultiplier);
+			colorMultipliers.push(transform.alphaMultiplier);
+		}
+		else
+			alphas.push(transform.alphaMultiplier);
+
+		if (hasColorOffsets) {
+			colorOffsets.push(transform.redOffset);
+			colorOffsets.push(transform.greenOffset);
+			colorOffsets.push(transform.blueOffset);
+			colorOffsets.push(transform.alphaOffset);
+		}
 	}
 
-	public function addQuad(frame:FlxFrame, matrix:FlxMatrix, ?transform:ColorTransform):Void {}
+	inline function bindToShader(camera:FlxCamera, shader:FlxShader) {
+		shader.bitmap.input = graphics.bitmap;
+		shader.bitmap.wrap = wrapMode;
+		shader.bitmap.filter = (camera.antialiasing || antialiasing) ? LINEAR : NEAREST;
 
-	function get_numVertices():Int
-	{
-		return 0;
-	}
+		setParameterValue(shader.hasTransform, true);
+		setParameterValue(shader.hasColorTransform, colored);
 
-	function get_numTriangles():Int
-	{
-		return 0;
+		shader.alpha.value = colored ? null : alphas;
+		shader.colorMultiplier.value = colored ? colorMultipliers : null;
+		shader.colorOffset.value = hasColorOffsets ? colorOffsets : null;
+
+		camera.canvas.graphics.overrideBlendMode(blend);
+		camera.canvas.graphics.beginShaderFill(shader);
+		camera.canvas.graphics.overrideDepthTest(depthCompareMode != ALWAYS, depthCompareMode);
 	}
 }
 
-enum FlxDrawItemType
-{
+enum FlxDrawItemType {
 	TILES;
 	TRIANGLES;
+	NOTE;
 }

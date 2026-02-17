@@ -108,6 +108,18 @@ class FlxMath
 	{
 		return a + ratio * (b - a);
 	}
+	
+	/**
+	 * Adjusts the given lerp to account for the time that has passed
+	 * 
+	 * @param   lerp     The ratio to lerp in 1/60th of a second
+	 * @param   elapsed  The amount of time that has actually passed
+	 * @since 6.0.0
+	 */
+	public static function getElapsedLerp(lerp:Float, elapsed:Float):Float
+	{
+		return 1.0 - Math.pow(1.0 - lerp, elapsed * 60);
+	}
 
 	/**
 	 * Checks if number is in defined range. A null bound means that side is unbounded.
@@ -213,7 +225,12 @@ class FlxMath
 		}
 		else
 		{
+			#if (flixel >= "6.0.0")
+			return pointInFlxRect(FlxG.mouse.viewX, FlxG.mouse.viewY, rect);
+			#else
+
 			return pointInFlxRect(FlxG.mouse.screenX, FlxG.mouse.screenY, rect);
+			#end
 		}
 	}
 	#end
@@ -258,7 +275,7 @@ class FlxMath
 	}
 
 	/**
-	 * Makes sure that value always stays between 0 and max,
+	 * Makes sure that value always stays between min and max,
 	 * by wrapping the value around.
 	 *
 	 * @param 	value 	The value to wrap around
@@ -398,8 +415,13 @@ class FlxMath
 	 */
 	public static inline function distanceToMouse(Sprite:FlxSprite):Int
 	{
+		#if (flixel >= "6.0.0")
+		var dx:Float = (Sprite.x + Sprite.origin.x) - FlxG.mouse.viewX;
+		var dy:Float = (Sprite.y + Sprite.origin.y) - FlxG.mouse.viewY;
+		#else
 		var dx:Float = (Sprite.x + Sprite.origin.x) - FlxG.mouse.screenX;
 		var dy:Float = (Sprite.y + Sprite.origin.y) - FlxG.mouse.screenY;
+		#end
 		return Std.int(FlxMath.vectorLength(dx, dy));
 	}
 
@@ -414,8 +436,13 @@ class FlxMath
 	 */
 	public static inline function isDistanceToMouseWithin(Sprite:FlxSprite, Distance:Float, IncludeEqual:Bool = false):Bool
 	{
+		#if (flixel >= "6.0.0")
+		var dx:Float = (Sprite.x + Sprite.origin.x) - FlxG.mouse.viewX;
+		var dy:Float = (Sprite.y + Sprite.origin.y) - FlxG.mouse.viewY;
+		#else
 		var dx:Float = (Sprite.x + Sprite.origin.x) - FlxG.mouse.screenX;
 		var dy:Float = (Sprite.y + Sprite.origin.y) - FlxG.mouse.screenY;
+		#end
 
 		if (IncludeEqual)
 			return dx * dx + dy * dy <= Distance * Distance;
@@ -434,8 +461,13 @@ class FlxMath
 	 */
 	public static inline function distanceToTouch(Sprite:FlxSprite, Touch:FlxTouch):Int
 	{
+		#if (flixel >= "6.0.0")
+		var dx:Float = (Sprite.x + Sprite.origin.x) - Touch.viewX;
+		var dy:Float = (Sprite.y + Sprite.origin.y) - Touch.viewY;
+		#else
 		var dx:Float = (Sprite.x + Sprite.origin.x) - Touch.screenX;
 		var dy:Float = (Sprite.y + Sprite.origin.y) - Touch.screenY;
+		#end
 		return Std.int(FlxMath.vectorLength(dx, dy));
 	}
 
@@ -450,8 +482,13 @@ class FlxMath
 	 */
 	public static inline function isDistanceToTouchWithin(Sprite:FlxSprite, Touch:FlxTouch, Distance:Float, IncludeEqual:Bool = false):Bool
 	{
+		#if (flixel >= "6.0.0")
+		var dx:Float = (Sprite.x + Sprite.origin.x) - Touch.viewX;
+		var dy:Float = (Sprite.y + Sprite.origin.y) - Touch.viewY;
+		#else
 		var dx:Float = (Sprite.x + Sprite.origin.x) - Touch.screenX;
 		var dy:Float = (Sprite.y + Sprite.origin.y) - Touch.screenY;
+		#end
 
 		if (IncludeEqual)
 			return dx * dx + dy * dy <= Distance * Distance;
@@ -572,5 +609,24 @@ class FlxMath
 	public static inline function absInt(n:Int):Int
 	{
 		return (n > 0) ? n : -n;
+	}
+	
+	/**
+	 * Performs a modulo operation to calculate the remainder of `a` divided by `b`.
+	 * 
+	 * The definition of "remainder" varies by implementation;
+	 * this one is similar to GLSL or Python in that it uses Euclidean division, which always returns positive,
+	 * while Haxe's `%` operator uses signed truncated division.
+	 * 
+	 * For example, `-5 % 3` returns `-2` while `FlxMath.mod(-5, 3)` returns `1`.
+	 * 
+	 * @param a The dividend.
+	 * @param b The divisor.
+	 * @return `a mod b`.
+	 */
+	public static inline function mod(a:Float, b:Float):Float
+	{
+		b = Math.abs(b);
+		return a - b * Math.floor(a / b);
 	}
 }

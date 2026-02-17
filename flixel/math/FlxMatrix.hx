@@ -1,6 +1,7 @@
 package flixel.math;
 
 import openfl.geom.Matrix;
+import flixel.math.FlxAngle;
 
 /**
  * Helper class for making fast matrix calculations for rendering.
@@ -60,6 +61,40 @@ class FlxMatrix extends Matrix
 	public inline function rotateByNegative90():FlxMatrix
 	{
 		this.setTo(b, -a, d, -c, ty, -tx);
+		return this;
+	}
+
+	/**
+	 * Skews this matrix with angles.
+	 * 
+	 * @param   xtheta The angle for to skew the x transformation of this matrix
+	 * @param   ytheta The angle for to skew the y transformation of this matrix
+	 * @return  skewed matrix
+	 * 
+	 * @since raltyMod
+	 */
+	public inline function skew(xtheta:Float, ytheta:Float):FlxMatrix
+	{
+		return skewByTrigs(Math.tan(xtheta * FlxAngle.TO_RAD), Math.tan(ytheta * FlxAngle.TO_RAD));
+	}
+
+	/**
+	 * Skews this matrix with angles, but takes the value of tangent values.
+	 * 
+	 * @param   xtan The tangent value for to skew the x transformation of this matrix
+	 * @param   ytan The tangent value for to skew the y transformation of this matrix
+	 * @return  skewed matrix
+	 * 
+	 * @since raltyMod
+	 */
+	public inline function skewByTrigs(xtan:Float, ytan:Float):FlxMatrix
+	{
+		b = a * ytan + b;
+		c = c + d * xtan;
+
+		var y1:Float = ty;
+		ty = tx * ytan + y1;
+		tx = tx + y1 * xtan;
 		return this;
 	}
 

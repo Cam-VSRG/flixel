@@ -1,14 +1,15 @@
 package flixel;
 
+import funkin.backend.CPPTypes;
+import flixel.graphics.tile.FlxDrawBaseItem;
+import flixel.system.FlxSplash;
+import flixel.util.FlxArrayUtil;
+import openfl.Assets;
 import openfl.Lib;
 import openfl.display.Sprite;
 import openfl.display.StageAlign;
 import openfl.display.StageScaleMode;
 import openfl.events.Event;
-import flixel.graphics.tile.FlxDrawBaseItem;
-import flixel.system.FlxSplash;
-import flixel.util.FlxArrayUtil;
-import openfl.Assets;
 import openfl.filters.BitmapFilter;
 #if desktop
 import openfl.events.FocusEvent;
@@ -43,7 +44,7 @@ class FlxGame extends Sprite
 	/**
 	 * Framerate to use on focus lost. Default is `10`.
 	 */
-	public var focusLostFramerate:Int = 10;
+	public var focusLostFramerate:ByteUInt = 10;
 
 	#if FLX_RECORD
 	/**
@@ -259,8 +260,7 @@ class FlxGame extends Sprite
 	 *
 	 * @see [scale modes](https://api.haxeflixel.com/flixel/system/scaleModes/index.html)
 	 */
-	public function new(gameWidth = 0, gameHeight = 0, ?initialState:Class<FlxState>, updateFramerate = 60, drawFramerate = 60, skipSplash = false,
-			startFullscreen = false)
+	public function new(?initState:Class<FlxState>, ?gameWidth:Int = 0, ?gameHeight:Int = 0, ?framerate:Int = 60, ?skipSplash:Bool = false, ?startFullscreen:Bool = false)
 	{
 		super();
 
@@ -279,8 +279,7 @@ class FlxGame extends Sprite
 		// Basic display and update setup stuff
 		FlxG.init(this, gameWidth, gameHeight);
 
-		FlxG.updateFramerate = updateFramerate;
-		FlxG.drawFramerate = drawFramerate;
+		FlxG.updateFramerate = FlxG.drawFramerate = framerate;
 		_accumulator = _stepMS;
 		_skipSplash = skipSplash;
 
@@ -289,7 +288,7 @@ class FlxGame extends Sprite
 		#end
 
 		// Then get ready to create the game object for real
-		_initialState = (initialState == null) ? FlxState : initialState;
+		_initialState = (initState == null) ? FlxState : initState;
 
 		addEventListener(Event.ADDED_TO_STAGE, create);
 	}
@@ -405,6 +404,8 @@ class FlxGame extends Sprite
 		FlxG.signals.focusGained.dispatch();
 		_state.onFocus();
 
+		stage.frameRate = FlxG.drawFramerate;
+
 		if (!FlxG.autoPause)
 			return;
 
@@ -416,8 +417,6 @@ class FlxGame extends Sprite
 		#if FLX_DEBUG
 		debugger.stats.onFocus();
 		#end
-
-		stage.frameRate = FlxG.drawFramerate;
 		#if FLX_SOUND_SYSTEM
 		FlxG.sound.onFocus();
 		#end
@@ -431,14 +430,11 @@ class FlxGame extends Sprite
 			return;
 		#end
 
-		#if flash
-		if (_lostFocus)
-			return; // Don't run this function twice (bug in standalone flash player)
-		#end
-
 		_lostFocus = true;
 		FlxG.signals.focusLost.dispatch();
 		_state.onFocusLost();
+
+		stage.frameRate = focusLostFramerate;
 
 		if (!FlxG.autoPause)
 			return;
@@ -451,8 +447,6 @@ class FlxGame extends Sprite
 		#if FLX_DEBUG
 		debugger.stats.onFocusLost();
 		#end
-
-		stage.frameRate = focusLostFramerate;
 		#if FLX_SOUND_SYSTEM
 		FlxG.sound.onFocusLost();
 		#end
@@ -609,8 +603,7 @@ class FlxGame extends Sprite
 	 * this function handles actual destroying the old state and related processes,
 	 * and calls creates on the new state and plugs it into the game object.
 	 */
-	function switchState():Void
-	{
+	function switchState():Void {
 		// Basic reset stuff
 		FlxG.cameras.reset();
 		FlxG.inputs.onStateSwitch();
