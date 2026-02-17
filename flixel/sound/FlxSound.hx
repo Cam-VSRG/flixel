@@ -7,13 +7,19 @@ import flixel.math.FlxPoint;
 import flixel.system.FlxAssets.FlxSoundAsset;
 import flixel.tweens.FlxTween;
 import flixel.util.FlxStringUtil;
+import openfl.Assets;
 import openfl.events.Event;
 import openfl.events.IEventDispatcher;
 import openfl.media.Sound;
 import openfl.media.SoundChannel;
 import openfl.media.SoundTransform;
 import openfl.net.URLRequest;
+#if flash11
 import openfl.utils.ByteArray;
+#end
+#if (openfl >= "8.0.0")
+import openfl.utils.AssetType;
+#end
 
 /**
  * This is the universal flixel sound object, used for streaming, music, and sound effects.
@@ -75,9 +81,6 @@ class FlxSound extends FlxBasic
 	
 	/**
 	 * Pan amount. -1 = full left, 1 = full right. Proximity based panning overrides this.
-	 * 
-	 * Note: On desktop targets this only works with mono sounds, due to limitations of OpenAL.
-	 * More info: [OpenFL Forums - SoundTransform.pan does not work](https://community.openfl.org/t/windows-legacy-soundtransform-pan-does-not-work/6616/2?u=geokureli)
 	 */
 	public var pan(get, set):Float;
 	
@@ -87,9 +90,7 @@ class FlxSound extends FlxBasic
 	public var playing(get, never):Bool;
 	
 	/**
-	 * A number between 0 and 1 indicating how loud this sound is.
-	 * 
-	 * **NOTE:** This value is automatically clamped to 0 <= a <= 1
+	 * Set volume to a value between 0 and 1 to change how this sound is.
 	 */
 	public var volume(get, set):Float;
 	
@@ -113,8 +114,7 @@ class FlxSound extends FlxBasic
 	public var length(get, never):Float;
 	
 	/**
-	 * The sound group this sound belongs to, can only be in one group.
-	 * NOTE: This setter is deprecated, use `group.add(sound)` or `group.remove(sound)`.
+	 * The sound group this sound belongs to
 	 */
 	public var group(default, set):FlxSoundGroup;
 	
@@ -146,9 +146,6 @@ class FlxSound extends FlxBasic
 	 * Internal tracker for a Flash sound object.
 	 */
 	@:allow(flixel.system.frontEnds.SoundFrontEnd.load)
-	#if FLX_STREAM_SOUND
-	@:allow(flixel.system.frontEnds.SoundFrontEnd.loadStreamed)
-	#end
 	var _sound:Sound;
 	
 	/**
@@ -211,7 +208,7 @@ class FlxSound extends FlxBasic
 	/**
 	 * Helper var to prevent the sound from playing after focus was regained when it was already paused.
 	 */
-	var _resumeOnFocus:Bool = false;
+	var _alreadyPaused:Bool = false;
 	
 	/**
 	 * The FlxSound constructor gets all the variables initialized, but NOT ready to play a sound yet.
@@ -255,10 +252,6 @@ class FlxSound extends FlxBasic
 	
 	override public function destroy():Void
 	{
-		// Prevents double destroy
-		if (group != null)
-			group.remove(this);
-		
 		_transform = null;
 		exists = false;
 		active = false;
@@ -338,114 +331,54 @@ class FlxSound extends FlxBasic
 	}
 	
 	/**
-	 * Loads a sound from the provided sound asset.
-	 * The asset can be an OpenFL Sound instance, embedded sound, file path or byte array.
-	 * 
-	 * **Note:** If the `FLX_DEFAULT_SOUND_EXT` flag is enabled, you may omit the file extension
-	 * 
-	 * @param   sound        The sound asset to load.
-	 * @param   looped       Whether or not this sound should loop endlessly.
-	 * @param   autoDestroy  Whether or not this FlxSound instance should be destroyed when
-	 *                       the sound finishes playing.
-	 * @param   onComplete   Called when the sound finishes playing.
-	 * @return  This FlxSound instance (nice for chaining stuff together, if you're into that).
-	 * 
-	 * @since 6.2.0
+	 * One of the main setup functions for sounds, this function loads a sound from an embedded MP3.
+	 *
+	 * @param	EmbeddedSound	An embedded Class object representing an MP3 file.
+	 * @param	Looped			Whether or not this sound should loop endlessly.
+	 * @param	AutoDestroy		Whether or not this FlxSound instance should be destroyed when the sound finishes playing.
+	 * 							Default value is false, but `FlxG.sound.play()` and `FlxG.sound.stream()` will set it to true by default.
+	 * @param	OnComplete		Called when the sound finished playing
+	 * @return	This FlxSound instance (nice for chaining stuff together, if you're into that).
 	 */
-	public function load(sound:FlxSoundAsset, looped:Bool = false, autoDestroy:Bool = false, ?onComplete:Void->Void):FlxSound
+	public function loadEmbedded(EmbeddedSound:FlxSoundAsset, Looped:Bool = false, AutoDestroy:Bool = false, ?OnComplete:Void->Void):FlxSound
 	{
-		if (sound == null)
+		if (EmbeddedSound == null)
 			return this;
 			
 		cleanup(true);
 		
-		if ((sound is Sound))
+		if ((EmbeddedSound is Sound))
 		{
-			_sound = sound;
+			_sound = EmbeddedSound;
 		}
-		else if ((sound is Class))
+		else if ((EmbeddedSound is Class))
 		{
-			_sound = Type.createInstance(sound, []);
+			_sound = Type.createInstance(EmbeddedSound, []);
 		}
-		else if ((sound is String))
+		else if ((EmbeddedSound is String))
 		{
-			if (FlxG.assets.exists(sound, SOUND))
-				_sound = FlxG.assets.getSoundUnsafe(sound);
+			if (Assets.exists(EmbeddedSound, AssetType.SOUND) || Assets.exists(EmbeddedSound, AssetType.MUSIC))
+				_sound = Assets.getSound(EmbeddedSound);
 			else
-				FlxG.log.error('Could not find a Sound asset with an ID of \'$sound\'.');
-		}
-		else if ((sound is ByteArrayData))
-		{
-			var bytes:ByteArray = cast sound;
-
-			_sound = new Sound();
-			_sound.addEventListener(Event.ID3, gotID3);
-			_sound.loadCompressedDataFromByteArray(bytes, bytes.length);
+				FlxG.log.error('Could not find a Sound asset with an ID of \'$EmbeddedSound\'.');
 		}
 		
 		// NOTE: can't pull ID3 info from embedded sound currently
-		return init(looped, autoDestroy, onComplete);
+		return init(Looped, AutoDestroy, OnComplete);
 	}
-
-	#if FLX_STREAM_SOUND
+	
 	/**
-	 * Streams a sound from the given file path. Unlike the `load` method, this will load and
-	 * unload chunks of data as the sound plays, keeping memory usage low. This is recommended for
-	 * longer sounds, like music tracks. For shorter sounds like sound effects, it is better to
-	 * use the `load` method, which loads the entire sound into memory before playing it.
-	 * 
-	 * Due to a backend limitation, audio streaming is currently only available on native targets 
-	 * and OGG/Vorbis audio files.
-	 * 
-	 * This does not load sounds from web locations. Use `loadFromURL()` for that, instead.
-	 * 
-	 * **Note:** If the `FLX_DEFAULT_SOUND_EXT` flag is enabled, you may omit the file extension
-	 * 
-	 * @param   path         The ID or asset path to the sound asset.
-	 * @param   looped       Whether or not this sound should loop endlessly.
-	 * @param   autoDestroy  Whether or not this FlxSound instance should be destroyed when the sound finishes playing.
-	 * @param   onComplete   Called when the sound finishes playing.
-	 * @return  This FlxSound instance (nice for chaining stuff together, if you're into that).
-	 * 
-	 * @since 6.2.0
+	 * One of the main setup functions for sounds, this function loads a sound from a URL.
+	 *
+	 * @param	SoundURL		A string representing the URL of the MP3 file you want to play.
+	 * @param	Looped			Whether or not this sound should loop endlessly.
+	 * @param	AutoDestroy		Whether or not this FlxSound instance should be destroyed when the sound finishes playing.
+	 * 							Default value is false, but `FlxG.sound.play()` and `FlxG.sound.stream()` will set it to true by default.
+	 * @param	OnComplete		Called when the sound finished playing
+	 * @param	OnLoad			Called when the sound finished loading.
+	 * @return	This FlxSound instance (nice for chaining stuff together, if you're into that).
 	 */
-	public function loadStreamed(path:String, looped:Bool = false, autoDestroy:Bool = false, ?onComplete:Void->Void):FlxSound
-	{
-		cleanup(true);
-
-		if (FlxG.assets.exists(path, SOUND))
-		{
-			if (FlxG.assets.canStreamSound(path))
-			{
-				_sound = FlxG.assets.streamSoundUnsafe(path);
-				
-				// NOTE: can't pull ID3 info from embedded sound currently
-				return init(looped, autoDestroy, onComplete);
-			}
-			
-			FlxG.log.error('Unable to stream SOUND asset with ID "$path". Expected a .OGG/Vorbis file');
-		}
-		else
-			FlxG.log.error('Could not find a Sound asset with an ID of \'$path\'.');
-		
-		return this;
-	}
-	#end
-
-	/**
-	 * Loads a sound from the provided URL.
-	 * 
-	 * @param   soundURL     A string representing the URL of the sound you want to play.
-	 * @param   looped       Whether or not this sound should loop endlessly.
-	 * @param   autoDestroy  Whether or not this FlxSound instance should be destroyed when
-	 *                       the sound finishes playing.
-	 * @param   onComplete   Called when the sound finishes playing.
-	 * @param   onLoad       Called when the sound finishes loading.
-	 * @return  This FlxSound instance (nice for chaining stuff together, if you're into that).
-	 * 
-	 * @since 6.2.0
-	 */
-	public function loadFromURL(soundURL:String, looped:Bool = false, autoDestroy:Bool = false, ?onComplete:Void->Void, ?onLoad:Void->Void):FlxSound
+	public function loadStream(SoundURL:String, Looped:Bool = false, AutoDestroy:Bool = false, ?OnComplete:Void->Void, ?OnLoad:Void->Void):FlxSound
 	{
 		cleanup(true);
 		
@@ -459,66 +392,38 @@ class FlxSound extends FlxBasic
 			if (_sound == e.target)
 			{
 				_length = _sound.length;
-				if (onLoad != null)
-					onLoad();
+				if (OnLoad != null)
+					OnLoad();
 			}
 		}
 		// Use a weak reference so this can be garbage collected if destroyed before loading.
 		_sound.addEventListener(Event.COMPLETE, loadCallback, false, 0, true);
-		_sound.load(new URLRequest(soundURL));
+		_sound.load(new URLRequest(SoundURL));
 		
-		return init(looped, autoDestroy, onComplete);
-	}
-
-	/**
-	 * One of the main setup functions for sounds, this function loads a sound from an embedded MP3.
-	 * 
-	 * **Note:** If the `FLX_DEFAULT_SOUND_EXT` flag is enabled, you may omit the file extension
-	 * 
-	 * @param   EmbeddedSound  An embedded Class object representing an MP3 file.
-	 * @param   Looped         Whether or not this sound should loop endlessly.
-	 * @param   AutoDestroy    Whether or not this FlxSound instance should be destroyed when the sound finishes playing.
-	 *                         Default value is false, but `FlxG.sound.play()` and `FlxG.sound.loadFromURL()` will set it to true by default.
-	 * @param   OnComplete     Called when the sound finished playing
-	 * @return  This FlxSound instance (nice for chaining stuff together, if you're into that).
-	 */
-	@:deprecated("loadEmbedded() is deprecated, use load() instead.")
-	public function loadEmbedded(EmbeddedSound:FlxSoundAsset, Looped:Bool = false, AutoDestroy:Bool = false, ?OnComplete:Void->Void):FlxSound
-	{
-		return load(EmbeddedSound, Looped, AutoDestroy, OnComplete);
+		return init(Looped, AutoDestroy, OnComplete);
 	}
 	
-	/**
-	 * One of the main setup functions for sounds, this function loads a sound from a URL.
-	 * 
-	 * @param   SoundURL     A string representing the URL of the MP3 file you want to play.
-	 * @param   Looped       Whether or not this sound should loop endlessly.
-	 * @param   AutoDestroy  Whether or not this FlxSound instance should be destroyed when the sound finishes playing.
-	 *                       Default value is false, but `FlxG.sound.play()` and `FlxG.sound.loadFromURL()` will set it to true by default.
-	 * @param   OnComplete   Called when the sound finished playing
-	 * @param   OnLoad       Called when the sound finished loading.
-	 * @return  This FlxSound instance (nice for chaining stuff together, if you're into that).
-	 */
-	@:deprecated("loadStream() is deprecated, use loadFromURL() instead.")
-	public function loadStream(SoundURL:String, Looped:Bool = false, AutoDestroy:Bool = false, ?OnComplete:Void->Void, ?OnLoad:Void->Void):FlxSound
-	{
-		return loadFromURL(SoundURL, Looped, AutoDestroy, OnComplete, OnLoad);
-	}
-	
+	#if flash11
 	/**
 	 * One of the main setup functions for sounds, this function loads a sound from a ByteArray.
-	 * 
-	 * @param   Bytes        A ByteArray object.
-	 * @param   Looped       Whether or not this sound should loop endlessly.
-	 * @param   AutoDestroy  Whether or not this FlxSound instance should be destroyed when the sound finishes playing.
-	 *                       Default value is false, but `FlxG.sound.play()` and `FlxG.sound.loadFromURL()` will set it to true by default.
-	 * @return  This FlxSound instance (nice for chaining stuff together, if you're into that).
+	 *
+	 * @param	Bytes 			A ByteArray object.
+	 * @param	Looped			Whether or not this sound should loop endlessly.
+	 * @param	AutoDestroy		Whether or not this FlxSound instance should be destroyed when the sound finishes playing.
+	 * 							Default value is false, but `FlxG.sound.play()` and `FlxG.sound.stream()` will set it to true by default.
+	 * @return	This FlxSound instance (nice for chaining stuff together, if you're into that).
 	 */
-	@:deprecated("loadByteArray() is deprecated, use load() instead.")
 	public function loadByteArray(Bytes:ByteArray, Looped:Bool = false, AutoDestroy:Bool = false, ?OnComplete:Void->Void):FlxSound
 	{
-		return load(Bytes, Looped, AutoDestroy, OnComplete);
+		cleanup(true);
+		
+		_sound = new Sound();
+		_sound.addEventListener(Event.ID3, gotID3);
+		_sound.loadCompressedDataFromByteArray(Bytes, Bytes.length);
+		
+		return init(Looped, AutoDestroy, OnComplete);
 	}
+	#end
 	
 	function init(Looped:Bool = false, AutoDestroy:Bool = false, ?OnComplete:Void->Void):FlxSound
 	{
@@ -687,24 +592,11 @@ class FlxSound extends FlxBasic
 	@:allow(flixel.sound.FlxSoundGroup)
 	function updateTransform():Void
 	{
-		_transform.volume = calcTransformVolume();
-		
+		_transform.volume = #if FLX_SOUND_SYSTEM (FlxG.sound.muted ? 0 : 1) * FlxG.sound.volume * #end
+			(group != null ? group.volume : 1) * _volume * _volumeAdjust;
+			
 		if (_channel != null)
 			_channel.soundTransform = _transform;
-	}
-	
-	function calcTransformVolume():Float
-	{
-		final volume = (group != null ? group.getVolume() : 1.0) * _volume * _volumeAdjust;
-		
-		#if FLX_SOUND_SYSTEM
-		if (FlxG.sound.muted)
-			return 0.0;
-		
-		return FlxG.sound.applySoundCurve(FlxG.sound.volume * volume);
-		#else
-		return volume;
-		#end
 	}
 	
 	/**
@@ -799,35 +691,36 @@ class FlxSound extends FlxBasic
 	@:allow(flixel.system.frontEnds.SoundFrontEnd)
 	function onFocus():Void
 	{
-		if (_resumeOnFocus)
-		{
-			_resumeOnFocus = false;
+		if (!_alreadyPaused)
 			resume();
-		}
 	}
 	
 	@:allow(flixel.system.frontEnds.SoundFrontEnd)
 	function onFocusLost():Void
 	{
-		_resumeOnFocus = !_paused;
+		_alreadyPaused = _paused;
 		pause();
 	}
 	#end
 	
-	@:deprecated("sound.group = myGroup is deprecated, use myGroup.add(sound)") // 5.7.0
-	function set_group(value:FlxSoundGroup):FlxSoundGroup
+	function set_group(group:FlxSoundGroup):FlxSoundGroup
 	{
-		if (value != null)
+		if (this.group != group)
 		{
-			// add to new group, also removes from prev and calls updateTransform
-			value.add(this);
+			var oldGroup:FlxSoundGroup = this.group;
+			
+			// New group must be set before removing sound to prevent infinite recursion
+			this.group = group;
+			
+			if (oldGroup != null)
+				oldGroup.remove(this);
+				
+			if (group != null)
+				group.add(this);
+				
+			updateTransform();
 		}
-		else
-		{
-			// remove from prev group, also calls updateTransform
-			group.remove(this);
-		}
-		return value;
+		return group;
 	}
 	
 	inline function get_playing():Bool
@@ -856,8 +749,9 @@ class FlxSound extends FlxBasic
 	function set_pitch(v:Float):Float
 	{
 		if (_channel != null)
-		{
-			#if (openfl < "9.3.2")
+			#if openfl_legacy
+			_channel.pitch = v;
+			#elseif (openfl < "9.3.2")
 			@:privateAccess
 			if (_channel.__source != null)
 				_channel.__source.pitch = v;
@@ -866,7 +760,6 @@ class FlxSound extends FlxBasic
 			if (_channel.__audioSource != null)
 				_channel.__audioSource.pitch = v;
 			#end
-		}
 			
 		return _pitch = v;
 	}
@@ -879,9 +772,7 @@ class FlxSound extends FlxBasic
 	
 	inline function set_pan(pan:Float):Float
 	{
-		_transform.pan = pan;
-		updateTransform();
-		return pan;
+		return _transform.pan = pan;
 	}
 	
 	inline function get_time():Float
