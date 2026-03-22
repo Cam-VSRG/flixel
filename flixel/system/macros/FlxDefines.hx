@@ -33,6 +33,8 @@ private enum UserDefines
 	FLX_NO_POINT_POOL;
 	FLX_NO_PITCH;
 	FLX_NO_SAVE;
+	/** Enables audio streaming related APIs */
+	FLX_STREAM_SOUND;
 }
 
 /**
@@ -205,6 +207,10 @@ class FlxDefines
 
 		#if (openfl >= "8.0.0")
 		define(FLX_DRAW_QUADS);
+		#end
+		
+		#if (lime_n2x || lime_vorbis)
+		define(FLX_STREAM_SOUND);
 		#end
 	}
 
