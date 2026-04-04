@@ -1,15 +1,118 @@
 package flixel.math;
 
+import flixel.util.FlxPool;
+import flixel.util.FlxStringUtil;
 import openfl.geom.Matrix;
-import flixel.math.FlxAngle;
 
 /**
  * Helper class for making fast matrix calculations for rendering.
  * It mostly copies Matrix class, but with some additions for
  * faster rotation by 90 degrees.
  */
-class FlxMatrix extends Matrix
+
+// merged from https://github.com/HaxeFlixel/flixel/pull/3582
+// because github desktop's dumb and won't let me merge it from upstream
+
+
+// also sidenote george you're a fucking moron
+// just listen to maru and merge the fucking pr
+// you're killing flixel
+class FlxMatrix extends Matrix implements IFlxPooled
 {
+	static var pool:FlxPool<FlxMatrix> = new FlxPool(FlxMatrix.new.bind(1, 0, 0, 1, 0, 0));
+	
+	var _weak:Bool = false;
+	var _inPool:Bool = false;
+	
+	/**
+	 * Recycle or create new FlxMatrix.
+	 * Be sure to put() them back into the pool after you're done with them!
+	 */
+	public static inline function get(a:Float = 1, b:Float = 0, c:Float = 0, d:Float = 1, tx:Float = 0, ty:Float = 0):FlxMatrix
+	{
+		var matrix = pool.get();
+		matrix.setTo(a, b, c, d, tx, ty);
+		matrix._inPool = false;
+		return matrix;
+	}
+	
+	/**
+	 * Recycle or create a new FlxMatrix which will automatically be released
+	 * to the pool when passed into a flixel function.
+	 */
+	public static inline function weak(a:Float = 1, b:Float = 0, c:Float = 0, d:Float = 1, tx:Float = 0, ty:Float = 0):FlxMatrix
+	{
+		var matrix = get(a, b, c, d, tx, ty);
+		matrix._weak = true;
+		return matrix;
+	}
+	
+	/**
+	 * Add this FlxMatrix to the recycling pool.
+	 */
+	public inline function put():Void
+	{
+		if (!_inPool)
+		{
+			_inPool = true;
+			_weak = false;
+			pool.putUnsafe(this);
+		}
+	}
+	
+	/**
+	 * Add this FlxMatrix to the recycling pool if it's a weak reference (allocated via weak()).
+	 */
+	public inline function putWeak():Void
+	{
+		if (_weak)
+		{
+			put();
+		}
+	}
+	
+	/**
+	 * Necessary for IFlxDestroyable.
+	 */
+	public function destroy() {}
+	
+	/**
+	 * Whether this matrix is `[1, 0, 0, 1, 0, 0]` which would have no effect
+	 * 
+	 * @since 6.2.0
+	 */
+	public inline function isIdentity():Bool
+	{
+		return a == 1 && b == 0 && c == 0 && d == 1 && tx == 0 && ty == 0;
+	}
+	
+	/**
+	 * Skews `this` matrix, in radians.
+	 * @param	skewX	Horizontal skew in radians.
+	 * @param	skewY	Vertical skew in radians.
+	 * @return	`this` skewed matrix.
+	 * @since 6.2.0
+	 */
+	public inline function skewRadians(skewX:Float, skewY:Float):FlxMatrix
+	{
+		b = Math.tan(skewY);
+		c = Math.tan(skewX);
+		
+		return this;
+	}
+	
+	/**
+	 * Skews `this` matrix, in degrees.
+	 * @param   skewX  Horizontal skew in degrees.
+	 * @param   skewY  Vertical skew in degrees.
+	 * @return  `this` skewed matrix.
+	 * @since 6.2.0
+	 */
+	public inline function skewDegrees(skewX:Float, skewY:Float):FlxMatrix
+	{
+		return skewRadians(skewX * FlxAngle.TO_RAD, skewY * FlxAngle.TO_RAD);
+	}
+	
 	/**
 	 * Rotates this matrix, but takes the values of sine and cosine,
 	 * so it might be useful when you rotate multiple matrices by the same angle
@@ -65,40 +168,6 @@ class FlxMatrix extends Matrix
 	}
 
 	/**
-	 * Skews this matrix with angles.
-	 * 
-	 * @param   xtheta The angle for to skew the x transformation of this matrix
-	 * @param   ytheta The angle for to skew the y transformation of this matrix
-	 * @return  skewed matrix
-	 * 
-	 * @since raltyMod
-	 */
-	public inline function skew(xtheta:Float, ytheta:Float):FlxMatrix
-	{
-		return skewByTrigs(Math.tan(xtheta * FlxAngle.TO_RAD), Math.tan(ytheta * FlxAngle.TO_RAD));
-	}
-
-	/**
-	 * Skews this matrix with angles, but takes the value of tangent values.
-	 * 
-	 * @param   xtan The tangent value for to skew the x transformation of this matrix
-	 * @param   ytan The tangent value for to skew the y transformation of this matrix
-	 * @return  skewed matrix
-	 * 
-	 * @since raltyMod
-	 */
-	public inline function skewByTrigs(xtan:Float, ytan:Float):FlxMatrix
-	{
-		b = a * ytan + b;
-		c = c + d * xtan;
-
-		var y1:Float = ty;
-		ty = tx * ytan + y1;
-		tx = tx + y1 * xtan;
-		return this;
-	}
-
-	/**
 	 * Transforms x coordinate of the point.
 	 * Took original code from openfl.geom.Matrix (which isn't available on flash target).
 	 *
@@ -139,4 +208,17 @@ class FlxMatrix extends Matrix
 		ty = sourceMatrix.ty;
 	}
 	#end
+	
+	override function toString()
+	{
+		return FlxStringUtil.getDebugString
+		([
+			LabelValuePair.weak("a", a),
+			LabelValuePair.weak("b", b),
+			LabelValuePair.weak("c", c),
+			LabelValuePair.weak("d", d),
+			LabelValuePair.weak("tx", tx),
+			LabelValuePair.weak("ty", ty)
+		]);
+	}
 }
